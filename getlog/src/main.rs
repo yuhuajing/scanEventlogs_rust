@@ -5,7 +5,9 @@ use ethers::{
 };
 use eyre::Result;
 use futures::future::join_all;
-// use futures::{join, try_join, AsyncWriteExt};
+use futures::{join, try_join, AsyncWriteExt};
+use mysql::prelude::*;
+use mysql::*;
 use std::string::String;
 use std::sync::Arc;
 // use std::thread;
@@ -20,20 +22,22 @@ async fn get_ws_client() -> Provider<Ws> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let client = Arc::new(get_ws_client().await);
-    let tasks = vec![
-        task::spawn(getlogs(client.clone())),
-        task::spawn(getbalance(client.clone())),
-    ];
-    join_all(tasks).await;
+   let _t:std::result::Result<(), Box<dyn std::error::Error>> = query_db().await;
+    // let client = Arc::new(get_ws_client().await);
+    // let tasks = vec![
+    //     task::spawn(get_history_logs(client.clone())),
+    //     task::spawn(getbalance(client.clone())),
+    // ];
+    // join_all(tasks).await;
     Ok(())
 }
 // "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef" // Transfer
 // "0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925" //Approval
 // "0x17307eab39ab6107e8899845ad3d59bd9653f200f220920489ca2b5937696c31" // ApprovalForAll
+
 async fn get_history_logs(client: Arc<Provider<Ws>>) -> Result<()> {
     let history_log_filter = Filter::new()
-        .from_block(17943452)
+        .from_block(18090483)
         //  .event("Transfer(address,address,uint256)")
         .address(ethers::types::ValueOrArray::Value(
             WETH_ADDRESS.parse::<Address>()?,
@@ -44,38 +48,15 @@ async fn get_history_logs(client: Arc<Provider<Ws>>) -> Result<()> {
         let h256_str = format!("{:?}", log.topics[0]);
         match h256_str.as_str() {
             "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef" => println!(
-                "block: {:?}, tx: {:?}, token: {:?}, topic{:?}, from{:?},to{:?},value{:?}",
+                "blocknumber: {:?}, sc: {:?}, from{:?},to{:?},id{:?},txhash{:?},logindex{:?}",
                 log.block_number,
-                //log.timestamp,
                 log.address,
-                //fun
                 Address::from(log.topics[1]),
                 Address::from(log.topics[2]),
-                U256::decode(log.topics[3])
-                log.transaction_hash,
-                log.logindex,
-              //  format!("{:?}", log.topics[0]),
+                log.topics[3].to_low_u64_be(),
+                log.transaction_hash.unwrap(),
+                log.log_index.unwrap(),
             ),
-            // "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef" => println!(
-            //     "block: {:?}, tx: {:?}, token: {:?}, topic{:?}, from{:?},to{:?},value{:?}",
-            //     log.block_number,
-            //     log.transaction_hash,
-            //     log.address,
-            //     format!("{:?}", log.topics[0]),
-            //     Address::from(log.topics[1]),
-            //     Address::from(log.topics[2]),
-            //     U256::decode(log.data.clone())
-            // ),
-            // "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef" => println!(
-            //     "block: {:?}, tx: {:?}, token: {:?}, topic{:?}, from{:?},to{:?},value{:?}",
-            //     log.block_number,
-            //     log.transaction_hash,
-            //     log.address,
-            //     format!("{:?}", log.topics[0]),
-            //     Address::from(log.topics[1]),
-            //     Address::from(log.topics[2]),
-            //     U256::decode(log.data.clone())
-            // ),
             _ => println!("others"),
         }
     }
@@ -83,7 +64,7 @@ async fn get_history_logs(client: Arc<Provider<Ws>>) -> Result<()> {
     Ok(())
 }
 
-async fn subscribe_new_logs(client: Arc<Provider<Ws>>) -> Result<()> {}
+// async fn subscribe_new_logs(client: Arc<Provider<Ws>>) -> Result<> {}
 
 async fn getbalance(client: Arc<Provider<Ws>>) -> Result<()> {
     let from_addr: &str = "0xc175006ED9Ee10210f466a043a300789a83C7420";
@@ -107,33 +88,33 @@ async fn getlatestblocknumber(client: Arc<Provider<Ws>>) -> Result<()> {
 
 #[derive(Debug, PartialEq, Eq)]
 struct Transfer {
-    blocknumber: i64,
+    blocknumber: u64,
     //  timestamp: Option<String>,
     address: Address,
     // func: Option<String>,
     from: Address,
     to: Address,
-    tokenid: i64,
+    tokenid: u64,
     txhash: Option<String>,
-    logindex: i64,
+    logindex: u64,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 struct Approval {
-    blocknumber: i64,
+    blocknumber: u64,
     //timestamp: Option<String>,
     address: Address,
     //  func: Option<String>,
     owner: Address,
     approved: Option<String>,
-    tokenid: i64,
+    tokenid: u64,
     txhash: Option<String>,
-    logindex: i64,
+    logindex: u64,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 struct ApprovalForAll {
-    blocknumber: i64,
+    blocknumber: u64,
     //  timestamp: Option<String>,
     address: Address,
     //func: Option<String>,
@@ -141,12 +122,35 @@ struct ApprovalForAll {
     operator: Address,
     approved: Option<String>,
     txhash: Option<String>,
-    logindex: i64,
+    logindex: u64,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 struct Owner {
     address: Address,
     owner: Address,
-    tokenid: i64,
+    tokenid: u64,
+}
+
+async fn get_db_conn()->std::result::Result<(PooledConn), Box<dyn std::error::Error>>{
+    let mysql_url: &str = "mysql://root:123456@localhost:3306/testUser";
+    let pool = Pool::new(mysql_url)?;
+    let mut conn = pool.get_conn()?;
+    Ok(conn)
+}
+
+async fn query_db() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    // let mysql_url: &str = "mysql://root:123456@localhost:3306/testUser";
+    // let pool = Pool::new(mysql_url)?;
+    // let mut conn = pool.get_conn()?;
+    let mut conn = get_db_conn().await;
+    let val: Option<String> =
+        conn.query_first("SELECT account_name from payment where customer_id=9")?;
+    let account_name:String = val.clone().unwrap_or_default();
+    
+    if "bar" == account_name{
+        println!("account_name = {account_name}");
+    }
+
+    Ok(())
 }
