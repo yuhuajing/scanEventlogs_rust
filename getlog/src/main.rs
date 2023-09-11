@@ -1,8 +1,8 @@
 use async_std::task;
 use ethers::{
-    core::types::{Address, BlockNumber, Filter, Log, U256, H160, H256, U64},
+    abi::AbiEncode,
+    core::types::{Address, BlockNumber, Filter, Log, H160, H256, U256, U64},
     providers::{Middleware, Provider, StreamExt, Ws},
-    abi::{AbiEncode},
 };
 use eyre::Result;
 use futures::future::join_all;
@@ -23,11 +23,10 @@ async fn get_ws_client() -> Provider<Ws> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-
-   // let _t: std::result::Result<(), Box<dyn std::error::Error>> = create_table().await;
+    // let _t: std::result::Result<(), Box<dyn std::error::Error>> = create_table().await;
 
     // let customer_id: i32 = 19;
-    // let account_name: String = "clay".to_string();
+    //let address: String = "0xff2B4721F997c242fF406a626f17df083Bd2C568".to_string();
     // let _t: std::result::Result<(), Box<dyn std::error::Error>> =
     //     query_try_insert_db(customer_id, 0, account_name).await;
 
@@ -40,37 +39,42 @@ async fn main() -> Result<()> {
     //     .number
     //     .unwrap();
 
-    // let address: String = "0xff2B4721F997c242fF406a626f17df083Bd2C568".to_string();
+    let address: String = "0xff2B4721F997c242fF406a626f17df083Bd2C568".to_string().to_lowercase();
 
-    // match query_db_latest_blocknum(customer_id, 0, address).await {
-    //     Ok(customer_id) => {
-    //         println!("customer_id={}", customer_id);
-    //     }
-    //     Err(_) => todo!(),
-    // }
+    match query_db_latest_blocknum(
+        0,
+        address,
+        String::new(),
+        String::new(),
+        String::new(),
+        String::new(),
+        0,
+    )
+    .await
+    {
+        Ok(blocknumber) => {
+            println!("blocknumber={}", blocknumber);
+        }
+        Err(_) => todo!(),
+    }
 
     //let from_block:BlockNumber = From::from() ;
 
+    // let tasks = vec![
+    //     task::spawn(get_history_logs(client.clone())),
+    //     //task::spawn(getbalance(client.clone())),
+    // ];
+    // join_all(tasks).await;
 
-        // .as_u64();
-
-    let tasks = vec![
-        task::spawn(get_history_logs(client.clone())),
-        //task::spawn(getbalance(client.clone())),
-    ];
-   join_all(tasks).await;
-
-    
-   
     Ok(())
 }
 
 async fn get_history_logs(client: Arc<Provider<Ws>>) -> Result<()> {
     let history_log_filter = Filter::new()
-    .from_block(17971969)
-    .to_block(17971975)
-       // .from_block(17971969)
-       // .to_block(BlockNumber::Number(to_block))
+        .from_block(17971969)
+        .to_block(17971975)
+        // .from_block(17971969)
+        // .to_block(BlockNumber::Number(to_block))
         //  .event("Transfer(address,address,uint256)")
         .address(ethers::types::ValueOrArray::Value(
             WETH_ADDRESS.parse::<Address>()?,
@@ -78,7 +82,8 @@ async fn get_history_logs(client: Arc<Provider<Ws>>) -> Result<()> {
 
     let logs = client.get_logs(&history_log_filter).await?;
     for log in logs.iter() {
-        let _tx: std::result::Result<(), Box<dyn std::error::Error>> = insert_log_db(log.clone()).await;
+        let _tx: std::result::Result<(), Box<dyn std::error::Error>> =
+            insert_log_db(log.clone()).await;
     }
     println!("{} tx found!", logs.iter().len());
     Ok(())
@@ -141,7 +146,7 @@ async fn create_table() -> std::result::Result<(), Box<dyn std::error::Error>> {
                     eprintln!("Error creating transfer table: {:?}", err);
                 }
             }
-   
+
             match conn.query_drop(
                 r"CREATE TABLE IF NOT EXISTS approval (
                     blocknumber int not null,
@@ -194,7 +199,6 @@ async fn create_table() -> std::result::Result<(), Box<dyn std::error::Error>> {
                     eprintln!("Error creating transfer table: {:?}", err);
                 }
             }
-
         }
         Err(err) => {
             eprintln!("Error: {:?}", err);
@@ -212,14 +216,25 @@ async fn insert_log_db(log: Log) -> std::result::Result<(), Box<dyn std::error::
         VALUES (:blocknumber, :address, :from_address, :to_address, :tokenid, :txhash, :logindex)",
                 params! {
                     "blocknumber" => log.block_number.unwrap().as_u64(),
-                    "address" => Address::from(log.address).to_string(),
-                    "from_address" =>Address::from(log.topics[1]).to_string(),
-                    "to_address" => Address::from(log.topics[2]).to_string(),
+                    "address" => {
+                        let mut body = AbiEncode::encode_hex(Address::from(log.address)).split_off(26);
+                        body.insert_str(0, "0x");
+                        body
+                    },
+                    "from_address" =>{
+                        let mut body = AbiEncode::encode_hex(Address::from(log.topics[1])).split_off(26);
+                        body.insert_str(0, "0x");
+                        body
+                    },
+                    "to_address" => {
+                        let mut body = AbiEncode::encode_hex(Address::from(log.topics[2])).split_off(26);
+                        body.insert_str(0, "0x");
+                        body
+                    },
                     "tokenid" => log.topics[3].to_low_u64_be(),
                     "txhash" => AbiEncode::encode_hex(log.transaction_hash.unwrap()),
                     "logindex" => log.log_index.unwrap().as_u64(),
                 },
-
             )?;
         }
         Err(err) => {
@@ -253,10 +268,10 @@ async fn getlatestblocknumber(client: Arc<Provider<Ws>>) -> Result<()> {
 struct Transfer {
     blocknumber: u64,
     //  timestamp: Option<String>,
-    address: Address,
+    address: Option<String>,
     // func: Option<String>,
-    from: Address,
-    to: Address,
+    from_address: Option<String>,
+    to_address: Option<String>,
     tokenid: u64,
     txhash: Option<String>,
     logindex: u64,
@@ -266,9 +281,9 @@ struct Transfer {
 struct Approval {
     blocknumber: u64,
     //timestamp: Option<String>,
-    address: Address,
+    address: Option<String>,
     //  func: Option<String>,
-    owner: Address,
+    owner: Option<String>,
     approved: Option<String>,
     tokenid: u64,
     txhash: Option<String>,
@@ -279,10 +294,10 @@ struct Approval {
 struct ApprovalForAll {
     blocknumber: u64,
     //  timestamp: Option<String>,
-    address: Address,
+    address: Option<String>,
     //func: Option<String>,
-    owner: Address,
-    operator: Address,
+    owner: Option<String>,
+    operator: Option<String>,
     approved: Option<String>,
     txhash: Option<String>,
     logindex: u64,
@@ -290,8 +305,8 @@ struct ApprovalForAll {
 
 #[derive(Debug, PartialEq, Eq)]
 struct Owner {
-    address: Address,
-    owner: Address,
+    address: Option<String>,
+    owner: Option<String>,
     tokenid: u64,
 }
 
@@ -302,63 +317,51 @@ struct Payment {
     account_name: Option<String>,
 }
 
+async fn query_db_latest_blocknum(
+    blocknumber: u64,
+    address: String,
+    owner: String,
+    operator: String,
+    approved: String,
+    txhash: String,
+    logindex: u64,
+) -> std::result::Result<u64, Box<dyn std::error::Error>> {
+    let query_seq = format!(
+        "SELECT * from transfer where address='{}' order by blocknumber desc limit 1",
+        address
+    );
 
+    match get_db_conn().await {
+        Ok(mut conn) => {
+            let val: Vec<Transfer> = conn.query_map(
+                query_seq,
+                |(blocknumber, address, from_address, to_address, tokenid, txhash, logindex)| {
+                    Transfer {
+                        blocknumber,
+                        address,
+                        from_address,
+                        to_address,
+                        tokenid,
+                        txhash,
+                        logindex,
+                    }
+                },
+            )?;
 
-// async fn query_db_latest_blocknum(
-//     blocknumber: u64,
-//     address: String,
-//     owner: String,
-//     operator: String,
-//     approved: String,
-//     txhash: String,
-//     logindex: u64,
+            if !val.is_empty() {
+                for log in val.iter() {
+                    let blocknumber = log.blocknumber;
+                    return Ok(blocknumber);
+                }
+            }
+        }
+        Err(err) => {
+            eprintln!("Error: {:?}", err);
+        }
+    }
 
-// ) -> std::result::Result<i32, Box<dyn std::error::Error>> {
-//     let query_seq = format!(
-//         "SELECT customer_id, amount, account_name from payment where account_name='{}' order by customer_id desc limit 1",
-//         account_name
-//     );
-
-//     match get_db_conn().await {
-//         Ok(mut conn) => {
-//             let val: Vec<Payment> =
-//                 conn.query_map(query_seq, |(customer_id, amount, account_name)| Payment {
-//                     customer_id,
-//                     amount,
-//                     account_name,
-//                 })?;
-
-//             if !val.is_empty() {
-//                 for log in val.iter() {
-//                     let customer_id = log.customer_id;
-//                     // let amount = log.amount;
-//                     //  let account_name: String = log.account_name.clone().unwrap_or_default(); // 可以有空数据
-//                     // println!(
-//                     //     "customer_id={}, amount={}, account_name={}",
-//                     //     customer_id, amount, account_name
-//                     // );
-//                     return Ok(customer_id);
-//                 }
-//             } else {
-//                 conn.exec_drop(
-//                     r"INSERT INTO payment (customer_id, amount, account_name)
-//                       VALUES (:customer_id, :amount, :account_name)",
-//                     params! {
-//                         "customer_id" => customer_id,
-//                         "amount" => 100,
-//                         "account_name" => account_name,
-//                     },
-//                 )?;
-//                 return Ok(0);
-//             }
-//         }
-//         Err(err) => {
-//             eprintln!("Error: {:?}", err);
-//         }
-//     }
-
-//     Ok(0)
-// }
+    Ok(0)
+}
 
 async fn query_try_insert_db(
     customer_id: i32,
@@ -426,5 +429,3 @@ async fn query_try_insert_db(
 //     )?;
 //     Ok(())
 // }
-
-
