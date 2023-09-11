@@ -30,7 +30,8 @@ async fn main() -> Result<()> {
     // let _t: std::result::Result<(), Box<dyn std::error::Error>> =
     //     query_try_insert_db(customer_id, 0, account_name).await;
 
-    let client = Arc::new(get_ws_client().await);
+    // let client = Arc::new(get_ws_client().await);
+    
     // let last_block: U64 = client
     //     .clone()
     //     .get_block(BlockNumber::Latest)
@@ -40,8 +41,7 @@ async fn main() -> Result<()> {
     //     .unwrap();
 
     let address: String = "0xff2B4721F997c242fF406a626f17df083Bd2C568".to_string().to_lowercase();
-
-    match query_db_latest_blocknum(
+    let from_block:u64 = match query_db_latest_blocknum(
         0,
         address,
         String::new(),
@@ -53,12 +53,11 @@ async fn main() -> Result<()> {
     .await
     {
         Ok(blocknumber) => {
-            println!("blocknumber={}", blocknumber);
+            blocknumber
         }
         Err(_) => todo!(),
-    }
-
-    //let from_block:BlockNumber = From::from() ;
+    };
+    let _from_block:U64 = U64::from(from_block);
 
     // let tasks = vec![
     //     task::spawn(get_history_logs(client.clone())),
