@@ -101,77 +101,31 @@ async fn get_history_logs(client: Arc<Provider<Ws>>) -> Result<()> {
 //     Ok(())
 // }
 
-async fn create_table() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    match get_db_conn().await {
-        Ok(mut conn) => {
-            match conn.query_drop(
-                r"CREATE TABLE IF NOT EXISTS transfer (
-                    blocknumber int not null,
-                    address text,
-                    from_address text,
-                    to_address text,
-                    tokenid int,
-                    txhash text,
-                    logindex int
-                )",
-            ) {
-                Ok(_) => {
-                    println!("Transfer table existed_or_created successfully");
-                }
-                Err(err) => {
-                    eprintln!("Error creating transfer table: {:?}", err);
-                }
-            }
-   
-            match conn.query_drop(
-                r"CREATE TABLE IF NOT EXISTS approval (
-                    blocknumber int not null,
-                    address text,
-                    from_address text,
-                    to_address text,
-                    tokenid int,
-                    txhash text,
-                    logindex int
-                )",
-            ) {
-                Ok(_) => {
-                    println!("Transfer table existed_or_created successfully");
-                }
-                Err(err) => {
-                    eprintln!("Error creating transfer table: {:?}", err);
-                }
-            }
 
-            match conn.query_drop(
-                r"CREATE TABLE IF NOT EXISTS transfer (
-                    blocknumber int not null,
-                    address text,
-                    from_address text,
-                    to_address text,
-                    tokenid int,
-                    txhash text,
-                    logindex int
-                )",
-            ) {
-                Ok(_) => {
-                    println!("Transfer table existed_or_created successfully");
-                }
-                Err(err) => {
-                    eprintln!("Error creating transfer table: {:?}", err);
-                }
-            }
-
-        }
-        Err(err) => {
-            eprintln!("Error: {:?}", err);
-        }
-    }
-    Ok(())
-}
 
 async fn insert_log_db(log: Log) -> std::result::Result<(), Box<dyn std::error::Error>> {
     match get_db_conn().await {
         Ok(mut conn) => {
+            // match conn.query_drop(
+            //     r"CREATE TABLE IF NOT EXISTS transfer (
+            //         blocknumber int not null,
+            //         address text,
+            //         from_address text,
+            //         to_address text,
+            //         tokenid int,
+            //         txhash text,
+            //         logindex int
+            //     )",
+            // ) {
+            //     Ok(_) => {
+            //         println!("Transfer table created successfully");
+            //        // Ok(())
+            //     }
+            //     Err(err) => {
+            //         eprintln!("Error creating transfer table: {:?}", err);
+            //        // Err(err.into())
+            //     }
+            // }
             println!("try insert");
             conn.exec_drop(
                 r"INSERT INTO transfer (blocknumber, address, from_address, to_address, tokenid, txhash, logindex)

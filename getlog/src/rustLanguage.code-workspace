@@ -1,0 +1,17 @@
+{
+	"folders": [
+		{
+			"path": "../../../rustLanguage"
+		},
+		{
+			"path": "../../../ethers-rs"
+		},
+		{
+			"path": "../../../rust-async-book"
+		},
+		{
+			"path": "../.."
+		}
+	],
+	"settings": {}
+}
