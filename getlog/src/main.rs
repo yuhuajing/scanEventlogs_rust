@@ -23,18 +23,13 @@ async fn get_ws_client() -> Provider<Ws> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+
+   // let _t: std::result::Result<(), Box<dyn std::error::Error>> = create_table().await;
+
     // let customer_id: i32 = 19;
     // let account_name: String = "clay".to_string();
     // let _t: std::result::Result<(), Box<dyn std::error::Error>> =
     //     query_try_insert_db(customer_id, 0, account_name).await;
-
-    // let account_name: String = "clay".to_string();
-    // match query_db_latest_blocknum(customer_id, 0, account_name).await {
-    //     Ok(customer_id) => {
-    //         println!("customer_id={}", customer_id);
-    //     }
-    //     Err(_) => todo!(),
-    // }
 
     let client = Arc::new(get_ws_client().await);
     // let last_block: U64 = client
@@ -44,21 +39,38 @@ async fn main() -> Result<()> {
     //     .unwrap()
     //     .number
     //     .unwrap();
-    // // // .as_u64();
 
-    // println!("last_block: {last_block}");
+    // let address: String = "0xff2B4721F997c242fF406a626f17df083Bd2C568".to_string();
+
+    // match query_db_latest_blocknum(customer_id, 0, address).await {
+    //     Ok(customer_id) => {
+    //         println!("customer_id={}", customer_id);
+    //     }
+    //     Err(_) => todo!(),
+    // }
+
+    //let from_block:BlockNumber = From::from() ;
+
+
+        // .as_u64();
+
     let tasks = vec![
         task::spawn(get_history_logs(client.clone())),
         //task::spawn(getbalance(client.clone())),
     ];
-    join_all(tasks).await;
+   join_all(tasks).await;
+
+    
+   
     Ok(())
 }
 
 async fn get_history_logs(client: Arc<Provider<Ws>>) -> Result<()> {
     let history_log_filter = Filter::new()
-        .from_block(17971969)
-        .to_block(17971975)
+    .from_block(17971969)
+    .to_block(17971975)
+       // .from_block(17971969)
+       // .to_block(BlockNumber::Number(to_block))
         //  .event("Transfer(address,address,uint256)")
         .address(ethers::types::ValueOrArray::Value(
             WETH_ADDRESS.parse::<Address>()?,
@@ -101,6 +113,13 @@ async fn get_history_logs(client: Arc<Provider<Ws>>) -> Result<()> {
 //     Ok(())
 // }
 
+async fn get_db_conn() -> std::result::Result<PooledConn, Box<dyn std::error::Error>> {
+    let mysql_url: &str = "mysql://root:123456@localhost:3306/testUser";
+    let pool = Pool::new(mysql_url)?;
+    let mut conn = pool.get_conn()?;
+    Ok(conn)
+}
+
 async fn create_table() -> std::result::Result<(), Box<dyn std::error::Error>> {
     match get_db_conn().await {
         Ok(mut conn) => {
@@ -127,15 +146,15 @@ async fn create_table() -> std::result::Result<(), Box<dyn std::error::Error>> {
                 r"CREATE TABLE IF NOT EXISTS approval (
                     blocknumber int not null,
                     address text,
-                    from_address text,
-                    to_address text,
+                    owner text,
+                    approved text,
                     tokenid int,
                     txhash text,
                     logindex int
                 )",
             ) {
                 Ok(_) => {
-                    println!("Transfer table existed_or_created successfully");
+                    println!("Approval table existed_or_created successfully");
                 }
                 Err(err) => {
                     eprintln!("Error creating transfer table: {:?}", err);
@@ -143,18 +162,33 @@ async fn create_table() -> std::result::Result<(), Box<dyn std::error::Error>> {
             }
 
             match conn.query_drop(
-                r"CREATE TABLE IF NOT EXISTS transfer (
+                r"CREATE TABLE IF NOT EXISTS approvalforall (
                     blocknumber int not null,
                     address text,
-                    from_address text,
-                    to_address text,
-                    tokenid int,
+                    owner text,
+                    operator text,
+                    approved text,
                     txhash text,
                     logindex int
                 )",
             ) {
                 Ok(_) => {
-                    println!("Transfer table existed_or_created successfully");
+                    println!("ApprovalForAll table existed_or_created successfully");
+                }
+                Err(err) => {
+                    eprintln!("Error creating transfer table: {:?}", err);
+                }
+            }
+
+            match conn.query_drop(
+                r"CREATE TABLE IF NOT EXISTS owner (
+                    address text,
+                    owner text,
+                    tokenid int
+                )",
+            ) {
+                Ok(_) => {
+                    println!("Owner table existed_or_created successfully");
                 }
                 Err(err) => {
                     eprintln!("Error creating transfer table: {:?}", err);
@@ -178,9 +212,9 @@ async fn insert_log_db(log: Log) -> std::result::Result<(), Box<dyn std::error::
         VALUES (:blocknumber, :address, :from_address, :to_address, :tokenid, :txhash, :logindex)",
                 params! {
                     "blocknumber" => log.block_number.unwrap().as_u64(),
-                    "address" => AbiEncode::encode_hex(log.address),//Address::from(log.address)),
-                    "from_address" => AbiEncode::encode_hex(log.topics[1]),
-                    "to_address" => AbiEncode::encode_hex(log.topics[2]),
+                    "address" => Address::from(log.address).to_string(),
+                    "from_address" =>Address::from(log.topics[1]).to_string(),
+                    "to_address" => Address::from(log.topics[2]).to_string(),
                     "tokenid" => log.topics[3].to_low_u64_be(),
                     "txhash" => AbiEncode::encode_hex(log.transaction_hash.unwrap()),
                     "logindex" => log.log_index.unwrap().as_u64(),
@@ -268,63 +302,63 @@ struct Payment {
     account_name: Option<String>,
 }
 
-async fn get_db_conn() -> std::result::Result<PooledConn, Box<dyn std::error::Error>> {
-    let mysql_url: &str = "mysql://root:123456@localhost:3306/testUser";
-    let pool = Pool::new(mysql_url)?;
-    let mut conn = pool.get_conn()?;
-    Ok(conn)
-}
 
-async fn query_db_latest_blocknum(
-    customer_id: i32,
-    amount: i32,
-    account_name: String,
-) -> std::result::Result<i32, Box<dyn std::error::Error>> {
-    let query_seq = format!(
-        "SELECT customer_id, amount, account_name from payment where account_name='{}' order by customer_id desc limit 1",
-        account_name
-    );
 
-    match get_db_conn().await {
-        Ok(mut conn) => {
-            let val: Vec<Payment> =
-                conn.query_map(query_seq, |(customer_id, amount, account_name)| Payment {
-                    customer_id,
-                    amount,
-                    account_name,
-                })?;
+// async fn query_db_latest_blocknum(
+//     blocknumber: u64,
+//     address: String,
+//     owner: String,
+//     operator: String,
+//     approved: String,
+//     txhash: String,
+//     logindex: u64,
 
-            if !val.is_empty() {
-                for log in val.iter() {
-                    let customer_id = log.customer_id;
-                    // let amount = log.amount;
-                    //  let account_name: String = log.account_name.clone().unwrap_or_default(); // 可以有空数据
-                    // println!(
-                    //     "customer_id={}, amount={}, account_name={}",
-                    //     customer_id, amount, account_name
-                    // );
-                    return Ok(customer_id);
-                }
-            } else {
-                conn.exec_drop(
-                    r"INSERT INTO payment (customer_id, amount, account_name)
-                      VALUES (:customer_id, :amount, :account_name)",
-                    params! {
-                        "customer_id" => customer_id,
-                        "amount" => 100,
-                        "account_name" => account_name,
-                    },
-                )?;
-                return Ok(0);
-            }
-        }
-        Err(err) => {
-            eprintln!("Error: {:?}", err);
-        }
-    }
+// ) -> std::result::Result<i32, Box<dyn std::error::Error>> {
+//     let query_seq = format!(
+//         "SELECT customer_id, amount, account_name from payment where account_name='{}' order by customer_id desc limit 1",
+//         account_name
+//     );
 
-    Ok(0)
-}
+//     match get_db_conn().await {
+//         Ok(mut conn) => {
+//             let val: Vec<Payment> =
+//                 conn.query_map(query_seq, |(customer_id, amount, account_name)| Payment {
+//                     customer_id,
+//                     amount,
+//                     account_name,
+//                 })?;
+
+//             if !val.is_empty() {
+//                 for log in val.iter() {
+//                     let customer_id = log.customer_id;
+//                     // let amount = log.amount;
+//                     //  let account_name: String = log.account_name.clone().unwrap_or_default(); // 可以有空数据
+//                     // println!(
+//                     //     "customer_id={}, amount={}, account_name={}",
+//                     //     customer_id, amount, account_name
+//                     // );
+//                     return Ok(customer_id);
+//                 }
+//             } else {
+//                 conn.exec_drop(
+//                     r"INSERT INTO payment (customer_id, amount, account_name)
+//                       VALUES (:customer_id, :amount, :account_name)",
+//                     params! {
+//                         "customer_id" => customer_id,
+//                         "amount" => 100,
+//                         "account_name" => account_name,
+//                     },
+//                 )?;
+//                 return Ok(0);
+//             }
+//         }
+//         Err(err) => {
+//             eprintln!("Error: {:?}", err);
+//         }
+//     }
+
+//     Ok(0)
+// }
 
 async fn query_try_insert_db(
     customer_id: i32,
@@ -392,3 +426,5 @@ async fn query_try_insert_db(
 //     )?;
 //     Ok(())
 // }
+
+
