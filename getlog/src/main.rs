@@ -22,7 +22,7 @@ async fn get_ws_client() -> Provider<Ws> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-   let _t:std::result::Result<(), Box<dyn std::error::Error>> = query_db().await;
+    let _t: std::result::Result<(), Box<dyn std::error::Error>> = query_db().await;
     // let client = Arc::new(get_ws_client().await);
     // let tasks = vec![
     //     task::spawn(get_history_logs(client.clone())),
@@ -132,7 +132,14 @@ struct Owner {
     tokenid: u64,
 }
 
-async fn get_db_conn()->std::result::Result<(PooledConn), Box<dyn std::error::Error>>{
+#[derive(Debug, PartialEq, Eq)]
+struct Payment {
+    customer_id: i32,
+    amount: i32,
+    account_name: Option<String>,
+}
+
+async fn get_db_conn() -> std::result::Result<PooledConn, Box<dyn std::error::Error>> {
     let mysql_url: &str = "mysql://root:123456@localhost:3306/testUser";
     let pool = Pool::new(mysql_url)?;
     let mut conn = pool.get_conn()?;
@@ -140,17 +147,61 @@ async fn get_db_conn()->std::result::Result<(PooledConn), Box<dyn std::error::Er
 }
 
 async fn query_db() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    // let mysql_url: &str = "mysql://root:123456@localhost:3306/testUser";
-    // let pool = Pool::new(mysql_url)?;
-    // let mut conn = pool.get_conn()?;
-    let mut conn = get_db_conn().await;
-    let val: Option<String> =
-        conn.query_first("SELECT account_name from payment where customer_id=9")?;
-    let account_name:String = val.clone().unwrap_or_default();
-    
-    if "bar" == account_name{
-        println!("account_name = {account_name}");
+    let customer_id: i32 = 19;
+    let account_name: String = "bar".to_string();
+    let query_seq = format!(
+        "SELECT customer_id, amount, account_name from payment where customer_id={} and account_name='{}'",
+        customer_id,
+        account_name
+    );
+    // println!("{query_seq}");
+    match get_db_conn().await {
+        Ok(mut conn) => {
+            let val: Vec<Payment> =
+                conn.query_map(query_seq, |(customer_id, amount, account_name)| Payment {
+                    customer_id,
+                    amount,
+                    account_name,
+                })?;
+            if val.iter().len() > 0 {
+                for log in val.iter() {
+                    let customer_id = log.customer_id;
+                    let amount = log.amount;
+                    let account_name: String = log.account_name.clone().unwrap_or_default(); // 可以有空数据
+                    println!("customer_id={customer_id}, amount = {amount}, account_name = {account_name}");
+                }
+            } else {
+                conn.exec_drop(
+                    r"INSERT INTO payment (customer_id, amount, account_name)
+            VALUES (:customer_id, :amount, :account_name)",
+                    params! {
+                        "customer_id" => customer_id,
+                                "amount" => 100,
+                                "account_name" => account_name,
+                    },
+                )?;
+            }
+        }
+        Err(err) => {
+            eprintln!("Error: {:?}", err);
+        }
     }
-
     Ok(())
 }
+
+// async fn insert_db(
+//     customer_id: i32,
+//     amount: i32,
+//     account_name: String,
+// ) -> std::result::Result<(), Box<dyn std::error::Error>> {
+//     conn.exec_drop(
+//         r"INSERT INTO payment (customer_id, amount, account_name)
+// VALUES (:customer_id, :amount, :account_name)",
+//         params! {
+//             "customer_id" => customer_id,
+//                     "amount" => amount,
+//                     "account_name" => Some(account_name.into()),
+//         },
+//     )?;
+//     Ok(())
+// }
