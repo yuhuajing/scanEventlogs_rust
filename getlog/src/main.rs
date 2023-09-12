@@ -16,22 +16,24 @@ use std::sync::Arc;
 
 const WETH_ADDRESS: &str = "0xff2B4721F997c242fF406a626f17df083Bd2C568";
 const WSS_URL: &str = "wss://eth.getblock.io/ab0b1aa0-b490-4dc0-9bda-817c897a4580/mainnet";
-
-async fn get_ws_client() -> Provider<Ws> {
-    Provider::<Ws>::connect(WSS_URL).await.unwrap()
-}
+//const WSS_URL: &str = "wss://eth.getblock.io/ab0b1aa0-b490-4dc0-9bda-817c897a4580/mainnet";
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // let _t: std::result::Result<(), Box<dyn std::error::Error>> = create_table().await;
+    let address: String = "0xff2B4721F997c242fF406a626f17df083Bd2C568"
+        .to_string()
+        .to_lowercase();
+
+    let _t: std::result::Result<(), Box<dyn std::error::Error>> =
+        create_table_insert_owner(address.clone()).await;
 
     // let customer_id: i32 = 19;
     //let address: String = "0xff2B4721F997c242fF406a626f17df083Bd2C568".to_string();
     // let _t: std::result::Result<(), Box<dyn std::error::Error>> =
     //     query_try_insert_db(customer_id, 0, account_name).await;
 
-    // let client = Arc::new(get_ws_client().await);
-    
+    let client = Arc::new(get_ws_client().await);
+
     // let last_block: U64 = client
     //     .clone()
     //     .get_block(BlockNumber::Latest)
@@ -40,10 +42,9 @@ async fn main() -> Result<()> {
     //     .number
     //     .unwrap();
 
-    let address: String = "0xff2B4721F997c242fF406a626f17df083Bd2C568".to_string().to_lowercase();
-    let from_block:u64 = match query_db_latest_blocknum(
+    let db_block: u64 = match query_db_latest_blocknum(
         0,
-        address,
+        address.clone(),
         String::new(),
         String::new(),
         String::new(),
@@ -52,28 +53,41 @@ async fn main() -> Result<()> {
     )
     .await
     {
-        Ok(blocknumber) => {
-            blocknumber
-        }
+        Ok(blocknumber) => blocknumber,
         Err(_) => todo!(),
     };
-    let _from_block:U64 = U64::from(from_block);
 
-    // let tasks = vec![
-    //     task::spawn(get_history_logs(client.clone())),
-    //     //task::spawn(getbalance(client.clone())),
-    // ];
-    // join_all(tasks).await;
+    let mut from_block: U64 = U64::default();
+
+    if db_block == 0 {
+        from_block = U64::from(17971966);
+    } else {
+        from_block = U64::from(db_block);
+    }
+
+    println!("{}", from_block.as_u64());
+
+    // let _t: std::result::Result<(), Box<dyn std::error::Error>> = update_owner_db(
+    //     address,
+    //     1,
+    //     "0x1E0049783F008A0085193E00003D00cd54003c71".to_string(),
+    // )
+    // .await;
+
+    let tasks = vec![
+        task::spawn(get_history_logs(client.clone(), from_block)),
+        // task::spawn(getbalance(client.clone())),
+    ];
+    join_all(tasks).await;
 
     Ok(())
 }
 
-async fn get_history_logs(client: Arc<Provider<Ws>>) -> Result<()> {
+async fn get_history_logs(client: Arc<Provider<Ws>>, from_block: U64) -> Result<()> {
     let history_log_filter = Filter::new()
-        .from_block(17971969)
-        .to_block(17971975)
-        // .from_block(17971969)
-        // .to_block(BlockNumber::Number(to_block))
+        .from_block(BlockNumber::Number(from_block)) //17971969
+        .to_block(17971994)
+        //.to_block(BlockNumber::Number(to_block)) //17971994
         //  .event("Transfer(address,address,uint256)")
         .address(ethers::types::ValueOrArray::Value(
             WETH_ADDRESS.parse::<Address>()?,
@@ -81,41 +95,34 @@ async fn get_history_logs(client: Arc<Provider<Ws>>) -> Result<()> {
 
     let logs = client.get_logs(&history_log_filter).await?;
     for log in logs.iter() {
+        let h256_str = format!("{:?}", log.topics[0]);
         let _tx: std::result::Result<(), Box<dyn std::error::Error>> =
-            insert_log_db(log.clone()).await;
+            insert_log_db(log.clone(), h256_str).await;
     }
     println!("{} tx found!", logs.iter().len());
     Ok(())
 }
 
-// async fn subscribe_new_logs(client: Arc<Provider<Ws>>, block_number: U64) -> Result<()> {
-//     let subscribe_log_filter = Filter::new()
-//         .from_block(BlockNumber::Number(block_number))
-//         //  .event("Transfer(address,address,uint256)")
-//         .address(ethers::types::ValueOrArray::Value(
-//             WETH_ADDRESS.parse::<Address>()?,
-//         ));
+async fn subscribe_new_logs(client: Arc<Provider<Ws>>, from_block: U64) -> Result<()> {
+    let subscribe_log_filter = Filter::new()
+        .from_block(BlockNumber::Number(from_block))
+        //  .event("Transfer(address,address,uint256)")
+        .address(ethers::types::ValueOrArray::Value(
+            WETH_ADDRESS.parse::<Address>()?,
+        ));
 
-//     let mut logs = client.subscribe_logs(&subscribe_log_filter).await?;
-//     while let Some(log) = logs.next().await {
-//         insert_log_db(log);
-//         // let h256_str = format!("{:?}", log.topics[0]);
-//         // match h256_str.as_str() {
-//         //     "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef" => println!(
-//         //         "blocknumber: {:?}, sc: {:?}, from{:?},to{:?},id{:?},txhash{:?},logindex{:?}",
-//         //         log.block_number,
-//         //         log.address,
-//         //         Address::from(log.topics[1]),
-//         //         Address::from(log.topics[2]),
-//         //         log.topics[3].to_low_u64_be(),
-//         //         log.transaction_hash.unwrap(),
-//         //         log.log_index.unwrap(),
-//         //     ),
-//         //     _ => println!("others"),
-//         // }
-//     }
-//     Ok(())
-// }
+    let mut logs = client.subscribe_logs(&subscribe_log_filter).await?;
+    while let Some(log) = logs.next().await {
+        let h256_str = format!("{:?}", log.topics[0]);
+        let _tx: std::result::Result<(), Box<dyn std::error::Error>> =
+            insert_log_db(log.clone(), h256_str).await;
+    }
+    Ok(())
+}
+
+async fn get_ws_client() -> Provider<Ws> {
+    Provider::<Ws>::connect(WSS_URL).await.unwrap()
+}
 
 async fn get_db_conn() -> std::result::Result<PooledConn, Box<dyn std::error::Error>> {
     let mysql_url: &str = "mysql://root:123456@localhost:3306/testUser";
@@ -124,7 +131,9 @@ async fn get_db_conn() -> std::result::Result<PooledConn, Box<dyn std::error::Er
     Ok(conn)
 }
 
-async fn create_table() -> std::result::Result<(), Box<dyn std::error::Error>> {
+async fn create_table_insert_owner(
+    address: String,
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
     match get_db_conn().await {
         Ok(mut conn) => {
             match conn.query_drop(
@@ -198,6 +207,32 @@ async fn create_table() -> std::result::Result<(), Box<dyn std::error::Error>> {
                     eprintln!("Error creating transfer table: {:?}", err);
                 }
             }
+
+            let query_seq = format!("SELECT * from owner where address='{}'", address);
+
+            let val: Vec<Owner> = conn.query_map(
+                //"SELECT customer_id, amount, account_name from payment where account_name='clay'",
+                query_seq,
+                |(address, owner, tokenid)| Owner {
+                    address,
+                    owner,
+                    tokenid,
+                },
+            )?;
+
+            if val.iter().len() == 0 {
+                for i in (0..=514).rev() {
+                    conn.exec_drop(
+                        r"INSERT INTO owner (address, tokenid)
+                VALUES (:address, :tokenid)",
+                        params! {
+                            "address" => address.clone(),
+                            "owner"=> String::default(),
+                            "tokenid" => i,
+                        },
+                    )?;
+                }
+            }
         }
         Err(err) => {
             eprintln!("Error: {:?}", err);
@@ -206,35 +241,173 @@ async fn create_table() -> std::result::Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn insert_log_db(log: Log) -> std::result::Result<(), Box<dyn std::error::Error>> {
+async fn insert_log_db(
+    log: Log,
+    topic: String,
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    let TRANSFER_EVENT: String =
+        String::from("0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef");
+    let APPROVAL_EVENT: String =
+        String::from("0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925");
+    let APPROVALFORALL_EVENT: String =
+        String::from("0x17307eab39ab6107e8899845ad3d59bd9653f200f220920489ca2b5937696c31");
+    let blocknumber: u64 = log.block_number.unwrap().as_u64();
+    let address: String = {
+        let mut body = AbiEncode::encode_hex(Address::from(log.address)).split_off(26);
+        body.insert_str(0, "0x");
+        body
+    };
+    let from_address: String = {
+        let mut body = AbiEncode::encode_hex(Address::from(log.topics[1])).split_off(26);
+        body.insert_str(0, "0x");
+        body
+    };
+    let to_address: String = {
+        let mut body = AbiEncode::encode_hex(Address::from(log.topics[2])).split_off(26);
+        body.insert_str(0, "0x");
+        body
+    };
+    let txhash: String = AbiEncode::encode_hex(log.transaction_hash.unwrap());
+    let logindex: u64 = log.log_index.unwrap().as_u64();
+    let transfer_query = format!(
+        "SELECT * from transfer where txhash='{}' and logindex={}",
+        txhash, logindex
+    );
+    let approval_query = format!(
+        "SELECT * from approval where txhash='{}' and logindex={}",
+        txhash, logindex
+    );
+    let approvalforall_query = format!(
+        "SELECT * from approvalforall where txhash='{}' and logindex={}",
+        txhash, logindex
+    );
+
     match get_db_conn().await {
         Ok(mut conn) => {
-            println!("try insert");
-            conn.exec_drop(
-                r"INSERT INTO transfer (blocknumber, address, from_address, to_address, tokenid, txhash, logindex)
-        VALUES (:blocknumber, :address, :from_address, :to_address, :tokenid, :txhash, :logindex)",
-                params! {
-                    "blocknumber" => log.block_number.unwrap().as_u64(),
-                    "address" => {
-                        let mut body = AbiEncode::encode_hex(Address::from(log.address)).split_off(26);
-                        body.insert_str(0, "0x");
-                        body
+            match topic.as_str() {
+                // match topic.as_str() {
+                "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef" => {
+                    let updatestmt = conn.prep(
+                        r"update owner set owner=:owner where address=:address and tokenid=:tokenid",
+                    )?;
+                    let token_id: u64 = log.topics[3].to_low_u64_be();
+                    let val: Vec<Transfer> = conn.query_map(
+                        transfer_query,
+                        |(
+                            blocknumber,
+                            address,
+                            from_address,
+                            to_address,
+                            tokenid,
+                            txhash,
+                            logindex,
+                        )| {
+                            Transfer {
+                                blocknumber,
+                                address,
+                                from_address,
+                                to_address,
+                                tokenid,
+                                txhash,
+                                logindex,
+                            }
+                        },
+                    )?;
+
+                    if val.is_empty() {
+                        // transfer
+                        conn.exec_drop(
+                    r"INSERT INTO transfer (blocknumber, address, from_address, to_address, tokenid, txhash, logindex)
+            VALUES (:blocknumber, :address, :from_address, :to_address, :tokenid, :txhash, :logindex)",
+                    params! {
+                        "blocknumber" => blocknumber,
+                        "address" => address.clone(),
+                        "from_address" =>from_address,
+                        "to_address" => to_address.clone(),
+                        "tokenid" =>token_id.clone(),
+                        "txhash" => txhash,
+                        "logindex" => logindex,
                     },
-                    "from_address" =>{
-                        let mut body = AbiEncode::encode_hex(Address::from(log.topics[1])).split_off(26);
-                        body.insert_str(0, "0x");
-                        body
-                    },
-                    "to_address" => {
-                        let mut body = AbiEncode::encode_hex(Address::from(log.topics[2])).split_off(26);
-                        body.insert_str(0, "0x");
-                        body
-                    },
-                    "tokenid" => log.topics[3].to_low_u64_be(),
-                    "txhash" => AbiEncode::encode_hex(log.transaction_hash.unwrap()),
-                    "logindex" => log.log_index.unwrap().as_u64(),
-                },
-            )?;
+                )?;
+                        conn.exec_drop(
+                            &updatestmt,
+                        params! {
+                            "address" => address,
+                            "owner" => to_address,
+                            "tokenid" => token_id,
+                        },
+                    )?;
+                    }
+                }
+                "0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925" => {
+                    let token_id: u64 = log.topics[3].to_low_u64_be();
+                    let val: Vec<Approval> = conn.query_map(
+                        approval_query,
+                        |(blocknumber, address, owner, approved, tokenid, txhash, logindex)| {
+                            Approval {
+                                blocknumber,
+                                address,
+                                owner,
+                                approved,
+                                tokenid,
+                                txhash,
+                                logindex,
+                            }
+                        },
+                    )?;
+
+                    if val.is_empty() {
+                        conn.exec_drop(
+                        r"INSERT INTO approval (blocknumber, address, owner, approved, tokenid, txhash, logindex)
+                VALUES (:blocknumber, :address, :owner, :approved, :tokenid, :txhash, :logindex)",
+                        params! {
+                            "blocknumber" => blocknumber,
+                            "address" => address,
+                            "owner" =>from_address,
+                            "approved" => to_address,
+                            "tokenid" => token_id,
+                            "txhash" => txhash,
+                            "logindex" => logindex,
+                        },
+                    )?;
+                    }
+                }
+                "0x17307eab39ab6107e8899845ad3d59bd9653f200f220920489ca2b5937696c31" => {
+                    let val: Vec<ApprovalForAll> = conn.query_map(
+                        approvalforall_query,
+                        |(blocknumber, address, owner, operator, approved, txhash, logindex)| {
+                            ApprovalForAll {
+                                blocknumber,
+                                address,
+                                owner,
+                                operator,
+                                approved,
+                                txhash,
+                                logindex,
+                            }
+                        },
+                    )?;
+
+                    if val.is_empty() {
+                        conn.exec_drop(
+                        r"INSERT INTO approvalforall (blocknumber, address, owner, operator, approved, txhash, logindex)
+                VALUES (:blocknumber, :address, :owner, :operator,:approved, :txhash, :logindex)",
+                        params! {
+                            "blocknumber" => blocknumber,
+                            "address" => address,
+                            "owner" =>from_address,
+                            "operator" => to_address,
+                            "approved" => AbiEncode::encode_hex(U256::from_big_endian(&log.data[29..32])),
+                            "txhash" => txhash,
+                            "logindex" => logindex,
+                        },
+                    )?;
+                    }
+                }
+                _ => {
+                    println!("Other")
+                }
+            }
         }
         Err(err) => {
             eprintln!("Error: {:?}", err);
@@ -317,13 +490,13 @@ struct Payment {
 }
 
 async fn query_db_latest_blocknum(
-    blocknumber: u64,
+    _blocknumber: u64,
     address: String,
-    owner: String,
-    operator: String,
-    approved: String,
-    txhash: String,
-    logindex: u64,
+    _owner: String,
+    _operator: String,
+    _approved: String,
+    _txhash: String,
+    _logindex: u64,
 ) -> std::result::Result<u64, Box<dyn std::error::Error>> {
     let query_seq = format!(
         "SELECT * from transfer where address='{}' order by blocknumber desc limit 1",
@@ -350,7 +523,7 @@ async fn query_db_latest_blocknum(
             if !val.is_empty() {
                 for log in val.iter() {
                     let blocknumber = log.blocknumber;
-                    return Ok(blocknumber);
+                    return Ok(blocknumber + 1);
                 }
             }
         }
@@ -412,19 +585,37 @@ async fn query_try_insert_db(
     Ok(())
 }
 
-// async fn insert_db(
-//     customer_id: i32,
-//     amount: i32,
-//     account_name: String,
-// ) -> std::result::Result<(), Box<dyn std::error::Error>> {
-//     conn.exec_drop(
-//         r"INSERT INTO payment (customer_id, amount, account_name)
-// VALUES (:customer_id, :amount, :account_name)",
-//         params! {
-//             "customer_id" => customer_id,
-//                     "amount" => amount,
-//                     "account_name" => Some(account_name.into()),
-//         },
-//     )?;
-//     Ok(())
-// }
+async fn update_owner_db(
+    address: String,
+    token_id: u64,
+    to_address: String,
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    match get_db_conn().await {
+        Ok(mut conn) => {
+            let updatestmt = conn.prep(
+                r"update owner set owner=:owner where address=:address and tokenid=:tokenid",
+            )?;
+            conn.exec_drop(
+                &updatestmt,
+                params! {
+                    "address" => address,
+                    "owner" => to_address,
+                    "tokenid" => token_id,
+                },
+            )?;
+        //     conn.exec_drop(
+        //         r"INSERT INTO owner (address, tokenid)
+        // VALUES (:address, :tokenid)",
+        //         params! {
+        //             "address" => address.clone(),
+        //             "owner"=> String::default(),
+        //             "tokenid" => i,
+        //         },
+        //     )?;
+        }
+        Err(err) => {
+            eprintln!("Error: {:?}", err);
+        }
+    }
+    Ok(())
+}
