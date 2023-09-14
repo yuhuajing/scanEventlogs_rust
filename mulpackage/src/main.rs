@@ -1,40 +1,24 @@
 use async_std::task;
 use ethers::{
     abi::AbiEncode,
-    core::types::{Address, BlockNumber, Filter, Log, H256, U256, U64},
+    core::types::{Address, BlockNumber, Filter, Log, U256, U64},
     providers::{Middleware, Provider, StreamExt, Ws},
 };
 use eyre::Result;
 use futures::future::join_all;
-use futures::AsyncWriteExt;
 use mysql::prelude::*;
 use mysql::*;
 use std::string::String;
 use std::sync::Arc;
 mod common;
-// use std::thread;
-// use std::time::Duration;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let address: &str = common::TARGET_ADDRESS.to_string().to_lowercase();
-
+    let address: String = common::TARGET_ADDRESS.to_string().to_lowercase();
     let _t: std::result::Result<(), Box<dyn std::error::Error>> =
         create_table_insert_owner(address.clone()).await;
-
     let client = Arc::new(get_ws_client().await);
-
-    let db_block: u64 = match query_db_latest_blocknum(
-        0,
-        address.clone(),
-        String::new(),
-        String::new(),
-        String::new(),
-        String::new(),
-        0,
-    )
-    .await
-    {
+    let db_block: u64 = match query_db_latest_blocknum(common::TARGET_ADDRESS).await {
         Ok(blocknumber) => blocknumber,
         Err(_) => todo!(),
     };
@@ -55,7 +39,8 @@ async fn main() -> Result<()> {
         .number
         .unwrap();
 
-    println!("{}", from_block.as_u64());
+    println!("fromBlock:{}", from_block.as_u64());
+    println!("latestBlock:{}", last_block.as_u64());
 
     let tasks = vec![
         task::spawn(get_history_logs(
@@ -75,7 +60,7 @@ async fn get_history_logs(client: Arc<Provider<Ws>>, from_block: U64, to_block: 
         .from_block(BlockNumber::Number(from_block)) //17971969
         .to_block(BlockNumber::Number(to_block)) //17971994
         .address(ethers::types::ValueOrArray::Value(
-            TARGET_ADDRESS.parse::<Address>()?,
+            common::TARGET_ADDRESS.parse::<Address>()?,
         ));
 
     let logs = client.get_logs(&history_log_filter).await?;
@@ -91,7 +76,7 @@ async fn subscribe_new_logs(client: Arc<Provider<Ws>>, from_block: U64) -> Resul
     let subscribe_log_filter = Filter::new()
         .from_block(BlockNumber::Number(from_block))
         .address(ethers::types::ValueOrArray::Value(
-            TARGET_ADDRESS.parse::<Address>()?,
+            common::TARGET_ADDRESS.parse::<Address>()?,
         ));
 
     let mut logs = client.subscribe_logs(&subscribe_log_filter).await?;
@@ -107,20 +92,28 @@ async fn get_ws_client() -> Provider<Ws> {
     Provider::<Ws>::connect(common::WSS_URL).await.unwrap()
 }
 
-async fn get_db_conn() -> std::result::Result<PooledConn, Box<dyn std::error::Error>> {
+// async fn get_db_conn() -> std::result::Result<PooledConn, Box<dyn std::error::Error>> {
+//     let mysql_url: &str = common::MYSQL_CONN_URL;
+//     let pool = Pool::new(mysql_url)?;
+//     let mut conn = pool.get_conn()?;
+//     Ok(conn)
+// }
+
+async fn get_pool() -> std::result::Result<Pool, Box<dyn std::error::Error>> {
     let mysql_url: &str = common::MYSQL_CONN_URL;
     let pool = Pool::new(mysql_url)?;
-    let mut conn = pool.get_conn()?;
-    Ok(conn)
+    // let mut conn = pool.get_conn()?;
+    Ok(pool)
 }
 
 async fn create_table_insert_owner(
     address: String,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
-    match get_db_conn().await {
-        Ok(mut conn) => {
-            let create_owner_state = conn.prep(common::CRERATE_TABLE_OWNER)?;
-            match conn.exec_drop(&create_owner_state) {
+    match get_pool().await {
+        Ok(pool) => {
+            //  let create_owner_state = conn.clone().prep(common::CRERATE_TABLE_OWNER)?;
+            let mut conn = pool.get_conn()?;
+            match conn.query_drop(common::CRERATE_TABLE_TRANSFER) {
                 Ok(_) => {
                     println!("Transfer table existed_or_created successfully");
                 }
@@ -129,8 +122,8 @@ async fn create_table_insert_owner(
                 }
             }
 
-            let create_approval_state = conn.prep(common::CRERATE_TABLE_APPROVAL)?;
-            match conn.exec_drop(&create_approval_state) {
+            //let create_approval_state = conn.clone().prep(common::CRERATE_TABLE_APPROVAL)?;
+            match conn.query_drop(common::CRERATE_TABLE_APPROVAL) {
                 Ok(_) => {
                     println!("Approval table existed_or_created successfully");
                 }
@@ -139,8 +132,8 @@ async fn create_table_insert_owner(
                 }
             }
 
-            let create_approvalforall_state = conn.prep(common::CRERATE_TABLE_APPROVALFORALL)?;
-            match conn.exec_drop(&create_approvalforall_state) {
+            //  let create_approvalforall_state = conn.clone().prep(common::CRERATE_TABLE_APPROVALFORALL)?;
+            match conn.query_drop(common::CRERATE_TABLE_APPROVALFORALL) {
                 Ok(_) => {
                     println!("ApprovalForAll table existed_or_created successfully");
                 }
@@ -149,8 +142,8 @@ async fn create_table_insert_owner(
                 }
             }
 
-            let create_owner_state = conn.prep(common::CRERATE_TABLE_OWNER)?;
-            match conn.exec_drop(&create_owner_state) {
+            //  let create_owner_state = conn.clone().prep(common::CRERATE_TABLE_OWNER)?;
+            match conn.query_drop(common::CRERATE_TABLE_OWNER) {
                 Ok(_) => {
                     println!("Owner table existed_or_created successfully");
                 }
@@ -160,15 +153,17 @@ async fn create_table_insert_owner(
             }
 
             let mut query_owner_state: &str = common::QUERY_OWNER_STATE;
-            let binding = query_state.replace("{address}", common::TARGET_ADDRESS);
+            let binding = query_owner_state.replace("{address}", common::TARGET_ADDRESS);
             query_owner_state = binding.as_str();
-            let results = conn.query_iter(query_owner_state);
-            if let Some(row) = results?.next() {
+            let mut results = conn.query_iter(query_owner_state)?;
+            if let Some(row) = results.next() {
                 let count: i64 = row?.get(0).unwrap_or(0);
                 if count == 0 {
+                    //drop(con n); // 释放 conn 引用
+                    let mut new_conn = pool.get_conn()?;
                     for i in (0..=514).rev() {
-                        let insert_owner_state = conn.prep(common::INSERT_OWNER_STATE)?;
-                        match conn.exec_drop(
+                        let insert_owner_state = new_conn.prep(common::INSERT_OWNER_STATE)?;
+                        match new_conn.exec_drop(
                             &insert_owner_state,
                             params! {
                                 "address" => address.clone(),
@@ -220,32 +215,35 @@ async fn insert_log_db(
     let mut transfer_query: &str = common::QUERY_TRANSFER_STATE;
     let transfer_binding = transfer_query
         .replace("{txhash}", txhash.as_str())
-        .replace("{logindex}".to_string().as_str());
+        .replace("{logindex}", logindex.to_string().as_str());
     transfer_query = transfer_binding.as_str();
 
     let mut approval_query: &str = common::QUERY_APPROVAL_STATE;
     let approval_binding = approval_query
         .replace("{txhash}", txhash.as_str())
-        .replace("{logindex}".to_string().as_str());
+        .replace("{logindex}", logindex.to_string().as_str());
     approval_query = approval_binding.as_str();
 
     let mut approvalforall_query: &str = common::QUERY_APPROVALFORALL_STATE;
     let approvalforallbinding = approvalforall_query
         .replace("{txhash}", txhash.as_str())
-        .replace("{logindex}".to_string().as_str());
+        .replace("{logindex}", logindex.to_string().as_str());
     approvalforall_query = approvalforallbinding.as_str();
 
-    match get_db_conn().await {
-        Ok(mut conn) => match topic.as_str() {
+    match get_pool().await {
+        Ok(pool) => match topic.as_str() {
             common::TRANSFER_EVENT => {
-                let update_owner_state = conn.prep(common::UPDATE_OWNER_STATE)?;
+                println!("transfer_event");
+                let mut conn = pool.get_conn()?;
                 let token_id: u64 = log.topics[3].to_low_u64_be();
-                let results = conn.query_iter(transfer_query);
-                if let Some(row) = results?.next() {
+                let mut results = conn.query_iter(transfer_query)?;
+                if let Some(row) = results.next() {
                     let count: i64 = row?.get(0).unwrap_or(0);
                     if count == 0 {
-                        let insert_transfer_stmt = conn.prep(common::INSERT_TRANSFER_STATE)?;
-                        conn.exec_drop(
+                        // drop(conn); // 释放 conn 引用
+                        let mut new_conn = pool.get_conn()?;
+                        let insert_transfer_stmt = new_conn.prep(common::INSERT_TRANSFER_STATE)?;
+                        new_conn.exec_drop(
                             &insert_transfer_stmt,
                             params! {
                                 "blocknumber" => blocknumber,
@@ -257,7 +255,8 @@ async fn insert_log_db(
                                 "logindex" => logindex,
                             },
                         )?;
-                        conn.exec_drop(
+                        let update_owner_state = new_conn.prep(common::UPDATE_OWNER_STATE)?;
+                        new_conn.exec_drop(
                             &update_owner_state,
                             params! {
                                 "address" => address,
@@ -269,14 +268,17 @@ async fn insert_log_db(
                 }
             }
             common::APPROVAL_EVENT => {
+                println!("approval_event");
+                let mut conn = pool.get_conn()?;
                 let token_id: u64 = log.topics[3].to_low_u64_be();
-                let results = conn.query_iter(approval_query);
-                if let Some(row) = results?.next() {
+                let mut results = conn.query_iter(approval_query)?;
+                if let Some(row) = results.next() {
                     let count: i64 = row?.get(0).unwrap_or(0);
                     if count == 0 {
-                        let insertstmt = conn.prep(common::INSERT_APPROVAL_STATE)?;
-
-                        conn.exec_drop(
+                        //drop(conn); // 释放 conn 引用
+                        let mut new_conn = pool.get_conn()?;
+                        let insertstmt = new_conn.prep(common::INSERT_APPROVAL_STATE)?;
+                        new_conn.exec_drop(
                             insertstmt,
                             params! {
                                 "blocknumber" => blocknumber,
@@ -292,12 +294,16 @@ async fn insert_log_db(
                 }
             }
             common::APPROVALFORALL_EVENT => {
-                let results = conn.query_iter(approvalforall_query);
-                if let Some(row) = results?.next() {
+                println!("approval_for_all_event");
+                let mut conn = pool.get_conn()?;
+                let mut results = conn.query_iter(approvalforall_query)?;
+                if let Some(row) = results.next() {
                     let count: i64 = row?.get(0).unwrap_or(0);
                     if count == 0 {
-                        let insertstmt = conn.prep(common::INSERT_APPROVALFORALL_STATE)?;
-                        conn.exec_drop(
+                        //drop(conn); // 释放 conn 引用
+                        let mut new_conn = pool.get_conn()?;
+                        let insertstmt = new_conn.prep(common::INSERT_APPROVALFORALL_STATE)?;
+                        new_conn.exec_drop(
                         insertstmt,
                         params! {
                             "blocknumber" => blocknumber,
@@ -324,21 +330,16 @@ async fn insert_log_db(
 }
 
 async fn query_db_latest_blocknum(
-    _blocknumber: u64,
-    address: String,
-    _owner: String,
-    _operator: String,
-    _approved: String,
-    _txhash: String,
-    _logindex: u64,
+    target_address: &str,
 ) -> std::result::Result<u64, Box<dyn std::error::Error>> {
-    match get_db_conn().await {
-        Ok(mut conn) => {
+    match get_pool().await {
+        Ok(pool) => {
+            let mut conn = pool.get_conn()?;
             let mut query_state: &str = common::QUERY_TRANSFER_LATESTBLOCK_STATE;
-            let binding = query_state.replace("{address}", common::TARGET_ADDRESS);
+            let binding = query_state.replace("{address}", target_address);
             query_state = binding.as_str();
-            let results = conn.query_iter(query_state);
-            if let Some(row) = results?.next() {
+            let mut results = conn.query_iter(query_state)?;
+            if let Some(row) = results.next() {
                 let blocknumber: u64 = row?.get(0).unwrap_or(0);
                 return Ok(blocknumber + 1);
             }
