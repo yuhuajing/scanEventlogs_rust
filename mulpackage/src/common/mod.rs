@@ -9,7 +9,8 @@ pub const APPROVALFORALL_EVENT: &str =
     "0x17307eab39ab6107e8899845ad3d59bd9653f200f220920489ca2b5937696c31";
 
 // mysql
-pub const MYSQL_CONN_URL: &str = "mysql://root:123456@localhost:3306/testUser";
+// pub const MYSQL_CONN_URL: &str = "mysql://root:123456@localhost:3306/testUser";
+
 // mysql create table
 pub const CRERATE_TABLE_TRANSFER: &str = r"CREATE TABLE IF NOT EXISTS transfer (
     blocknumber int not null,
