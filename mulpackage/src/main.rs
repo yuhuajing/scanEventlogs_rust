@@ -13,8 +13,13 @@ mod database;
 #[tokio::main]
 async fn main() -> Result<()> {
     let address: String = common::TARGET_ADDRESS.to_string().to_lowercase();
-    let _t: std::result::Result<(), Box<dyn std::error::Error>> =
-        database::create_table_insert_owner(
+    // let mypool = database::MyPool::new(common::MYSQL_CONN_URL)?;
+    let mypool: database::MyPool = match database::MyPool::new(common::MYSQL_CONN_URL).await {
+        Ok(pool) => pool,
+        Err(_) => todo!(),
+    };
+    let _t: std::result::Result<(), Box<dyn std::error::Error>> = mypool
+        .create_table_insert_owner(
             address.clone(),
             common::CRERATE_TABLE_TRANSFER,
             common::CRERATE_TABLE_APPROVAL,
@@ -25,11 +30,12 @@ async fn main() -> Result<()> {
         )
         .await;
     let client = Arc::new(get_ws_client().await);
-    let db_block: u64 = match database::query_db_latest_blocknum(
-        common::TARGET_ADDRESS,
-        common::QUERY_TRANSFER_LATESTBLOCK_STATE,
-    )
-    .await
+    let db_block: u64 = match mypool
+        .query_db_latest_blocknum(
+            common::TARGET_ADDRESS,
+            common::QUERY_TRANSFER_LATESTBLOCK_STATE,
+        )
+        .await
     {
         Ok(blocknumber) => blocknumber,
         Err(_) => todo!(),
@@ -54,20 +60,25 @@ async fn main() -> Result<()> {
     println!("fromBlock:{}", from_block.as_u64());
     println!("latestBlock:{}", last_block.as_u64());
 
-    // let tasks = vec![
-    //     task::spawn(get_history_logs(
-    //         client.clone(),
-    //         from_block.clone(),
-    //         last_block,
-    //     )),
-    //     task::spawn(subscribe_new_logs(client.clone(), from_block)),
-    // ];
-    // join_all(tasks).await;
+    let tasks = vec![
+        task::spawn(get_history_logs(
+            client.clone(),
+            from_block.clone(),
+            last_block,
+        )),
+        task::spawn(subscribe_new_logs(client.clone(), from_block)),
+    ];
+    join_all(tasks).await;
 
     Ok(())
 }
 
 async fn get_history_logs(client: Arc<Provider<Ws>>, from_block: U64, to_block: U64) -> Result<()> {
+    // let mypool = database::MyPool::new(common::MYSQL_CONN_URL)?;
+    let mypool: database::MyPool = match database::MyPool::new(common::MYSQL_CONN_URL).await {
+        Ok(pool) => pool,
+        Err(_) => todo!(),
+    };
     let history_log_filter = Filter::new()
         .from_block(BlockNumber::Number(from_block)) //17971969
         .to_block(BlockNumber::Number(to_block)) //17971994
@@ -78,26 +89,33 @@ async fn get_history_logs(client: Arc<Provider<Ws>>, from_block: U64, to_block: 
     let logs = client.get_logs(&history_log_filter).await?;
     for log in logs.iter() {
         let h256_str = format!("{:?}", log.topics[0]);
-        let _tx: std::result::Result<(), Box<dyn std::error::Error>> = database::insert_log_db(
-            log.clone(),
-            h256_str,
-            common::QUERY_TRANSFER_STATE,
-            common::QUERY_APPROVAL_STATE,
-            common::QUERY_APPROVALFORALL_STATE,
-            common::INSERT_TRANSFER_STATE,
-            common::INSERT_APPROVAL_STATE,
-            common::INSERT_APPROVALFORALL_STATE,
-            common::UPDATE_OWNER_STATE,
-            common::TRANSFER_EVENT,
-            common::APPROVAL_EVENT,
-            common::APPROVALFORALL_EVENT,
-        )
-        .await;
+        // if h256_str ==
+        let _tx: std::result::Result<(), Box<dyn std::error::Error>> = mypool
+            .insert_log_db(
+                log.clone(),
+                h256_str,
+                common::QUERY_TRANSFER_STATE,
+                common::QUERY_APPROVAL_STATE,
+                common::QUERY_APPROVALFORALL_STATE,
+                common::INSERT_TRANSFER_STATE,
+                common::INSERT_APPROVAL_STATE,
+                common::INSERT_APPROVALFORALL_STATE,
+                common::UPDATE_OWNER_STATE,
+                common::TRANSFER_EVENT,
+                common::APPROVAL_EVENT,
+                common::APPROVALFORALL_EVENT,
+            )
+            .await;
     }
     Ok(())
 }
 
 async fn subscribe_new_logs(client: Arc<Provider<Ws>>, from_block: U64) -> Result<()> {
+    // let mypool = database::MyPool::new(common::MYSQL_CONN_URL)?;
+    let mypool: database::MyPool = match database::MyPool::new(common::MYSQL_CONN_URL).await {
+        Ok(pool) => pool,
+        Err(_) => todo!(),
+    };
     let subscribe_log_filter = Filter::new()
         .from_block(BlockNumber::Number(from_block))
         .address(ethers::types::ValueOrArray::Value(
@@ -107,21 +125,22 @@ async fn subscribe_new_logs(client: Arc<Provider<Ws>>, from_block: U64) -> Resul
     let mut logs = client.subscribe_logs(&subscribe_log_filter).await?;
     while let Some(log) = logs.next().await {
         let h256_str = format!("{:?}", log.topics[0]);
-        let _tx: std::result::Result<(), Box<dyn std::error::Error>> = database::insert_log_db(
-            log.clone(),
-            h256_str,
-            common::QUERY_TRANSFER_STATE,
-            common::QUERY_APPROVAL_STATE,
-            common::QUERY_APPROVALFORALL_STATE,
-            common::INSERT_TRANSFER_STATE,
-            common::INSERT_APPROVAL_STATE,
-            common::INSERT_APPROVALFORALL_STATE,
-            common::UPDATE_OWNER_STATE,
-            common::TRANSFER_EVENT,
-            common::APPROVAL_EVENT,
-            common::APPROVALFORALL_EVENT,
-        )
-        .await;
+        let _tx: std::result::Result<(), Box<dyn std::error::Error>> = mypool
+            .insert_log_db(
+                log.clone(),
+                h256_str,
+                common::QUERY_TRANSFER_STATE,
+                common::QUERY_APPROVAL_STATE,
+                common::QUERY_APPROVALFORALL_STATE,
+                common::INSERT_TRANSFER_STATE,
+                common::INSERT_APPROVAL_STATE,
+                common::INSERT_APPROVALFORALL_STATE,
+                common::UPDATE_OWNER_STATE,
+                common::TRANSFER_EVENT,
+                common::APPROVAL_EVENT,
+                common::APPROVALFORALL_EVENT,
+            )
+            .await;
     }
     Ok(())
 }
