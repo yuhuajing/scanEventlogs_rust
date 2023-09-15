@@ -181,13 +181,13 @@ impl MyPool {
 
         match patternx {
             1 => {
-                println!("transfer_event");
                 let mut conn = self.pool.get_conn()?;
                 let token_id: u64 = log.topics[3].to_low_u64_be();
                 let mut results = conn.query_iter(transfer_query)?;
                 if let Some(row) = results.next() {
                     let count: i64 = row?.get(0).unwrap_or(0);
                     if count == 0 {
+                        println!("transfer_event");
                         let mut new_conn = self.pool.get_conn()?;
                         let insert_transfer_stmt = new_conn.prep(insert_transfer)?;
                         new_conn.exec_drop(
@@ -215,13 +215,13 @@ impl MyPool {
                 }
             }
             2 => {
-                println!("approval_event");
                 let mut conn = self.pool.get_conn()?;
                 let token_id: u64 = log.topics[3].to_low_u64_be();
                 let mut results = conn.query_iter(approval_query)?;
                 if let Some(row) = results.next() {
                     let count: i64 = row?.get(0).unwrap_or(0);
                     if count == 0 {
+                        println!("approval_event");
                         let mut new_conn = self.pool.get_conn()?;
                         let insertstmt = new_conn.prep(insert_approval)?;
                         new_conn.exec_drop(
@@ -240,12 +240,12 @@ impl MyPool {
                 }
             }
             3 => {
-                println!("approval_for_all_event");
                 let mut conn = self.pool.get_conn()?;
                 let mut results = conn.query_iter(approvalforall_query)?;
                 if let Some(row) = results.next() {
                     let count: i64 = row?.get(0).unwrap_or(0);
                     if count == 0 {
+                        println!("approval_for_all_event");
                         let mut new_conn = self.pool.get_conn()?;
                         let insertstmt = new_conn.prep(insert_approvalforall)?;
                         new_conn.exec_drop(
